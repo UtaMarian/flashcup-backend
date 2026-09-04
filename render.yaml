@@ -1,0 +1,58 @@
+# Render Blueprint — https://render.com/docs/infrastructure-as-code
+# In the Render dashboard: New + -> Blueprint -> connect this repo. Render
+# reads this file and provisions the service below. Values left as
+# `sync: false` are secrets/environment-specific — Render will prompt for
+# them once in the dashboard instead of storing them here in the repo.
+services:
+  - type: web
+    name: flashcup-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /api/health
+    envVars:
+      # Neon — app runtime uses the POOLED connection string, migrations use
+      # the UNPOOLED one. See prisma/schema.prisma.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Frontend origin — used for CORS and for building Stripe Checkout
+      # success/cancel redirect URLs.
+      - key: APP_URL
+        value: https://flashcup.live
+      - key: CORS_ORIGINS
+        value: https://flashcup.live
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: FACEBOOK_APP_ID
+        sync: false
+      - key: FACEBOOK_APP_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false

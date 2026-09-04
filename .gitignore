@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment variables — never commit real secrets
+.env
+.env.*
+!.env.example
+
+# SQLite (legacy — the app now runs on PostgreSQL, kept only for reference)
+*.db
+*.db-journal
+*.db_old
+prisma/dev.db
+prisma/dev.db-journal
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
