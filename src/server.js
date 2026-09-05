@@ -1,19 +1,14 @@
 require("dotenv").config();
 
 const app = require("./app");
-const { startMatchScheduler } = require("./jobs/matchScheduler");
-const { startEnergyRegenJob } = require("./jobs/energyJob");
-const { startManagerPollJob } = require("./jobs/managerPollJob");
-const { startEventsJob } = require("./jobs/eventsJob");
+const logger = require("./config/logger");
 
+// HTTP API only — stateless (JWT, no sessions), safe to scale horizontally.
+// Background cron jobs (match simulation, energy regen, manager polls,
+// events) live in a separate repo — https://github.com/UtaMarian/flashcup-workers
+// — which runs them as a singleton process against the same database.
 const PORT = process.env.PORT || 4001;
 
 app.listen(PORT, () => {
-  console.log(`Flash Cup API rulează pe http://localhost:${PORT}`);
-  startMatchScheduler();
-  startEnergyRegenJob();
-  // Daily gift is now a manual claim from the Shop (players.controller claimDailyGift) —
-  // the old auto-grant job (jobs/dailyBonusJob.js) is no longer scheduled.
-  startManagerPollJob();
-  startEventsJob();
+  logger.info(`Flash Cup API rulează pe http://localhost:${PORT}`);
 });

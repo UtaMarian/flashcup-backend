@@ -364,8 +364,37 @@ async function buyTransferListing(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// PATCH /api/manager/team   { colorHex?, colorHex2? }   (manager only — own team)
+// Lets the elected manager pick the club's two kit colours. `colorHex2` may be
+// cleared by sending null / "".
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+async function updateTeamColors(req, res, next) {
+  try {
+    const manager = req.user;
+    if (!manager.teamId) return res.status(409).json({ error: "Nu ești asociat niciunei echipe." });
+
+    const { colorHex, colorHex2 } = req.body;
+    const data = {};
+    if (colorHex !== undefined) {
+      if (!HEX_COLOR.test(colorHex || "")) return res.status(400).json({ error: "Culoare principală invalidă." });
+      data.colorHex = colorHex;
+    }
+    if (colorHex2 !== undefined) {
+      if (colorHex2 === null || colorHex2 === "") data.colorHex2 = null;
+      else if (!HEX_COLOR.test(colorHex2)) return res.status(400).json({ error: "Culoare secundară invalidă." });
+      else data.colorHex2 = colorHex2;
+    }
+    if (Object.keys(data).length === 0) return res.status(400).json({ error: "Nicio culoare de actualizat." });
+
+    const team = await prisma.team.update({ where: { id: manager.teamId }, data });
+    res.json({ team });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
-  kickPlayer, getLineup, saveLineup,
+  kickPlayer, getLineup, saveLineup, updateTeamColors,
   listFreeAgents, sendTransferOffer, listSentTransferOffers, cancelTransferOffer,
   listTransferListings, createTransferListing, withdrawTransferListing, buyTransferListing,
 };

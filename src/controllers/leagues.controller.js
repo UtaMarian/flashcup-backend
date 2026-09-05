@@ -4,6 +4,12 @@ const { generateRoundRobin } = require("../utils/fixtures");
 const { generateKickoffTimes, addDays } = require("../utils/matchTimes");
 const seasonService = require("../services/seasonService");
 const { getGameSettings } = require("../services/settingsService");
+const { getOrSet } = require("../utils/cache");
+
+// Standings/top-scorers/influence-board only change when a match is
+// simulated (at most once a minute, from the cron worker) — a short TTL
+// cache avoids recomputing them on every request from Dashboard/Competitions.
+const BOARD_CACHE_TTL_MS = 20 * 1000;
 
 /**
  * Creates the auto-generated "Cupa Națională" knockout league that accompanies
@@ -220,53 +226,58 @@ async function startLeague(req, res, next) {
 // GET /api/leagues/:id/standings — computed on the fly from played matches
 async function getStandings(req, res, next) {
   try {
-    const league = await prisma.league.findUnique({
-      where: { id: req.params.id },
-      include: { teams: true },
-    });
-    if (!league) return res.status(404).json({ error: "Liga nu există." });
+    const payload = await getOrSet(`standings:${req.params.id}`, BOARD_CACHE_TTL_MS, async () => {
+      const league = await prisma.league.findUnique({
+        where: { id: req.params.id },
+        include: { teams: true },
+      });
+      if (!league) return null;
 
-    const playedMatches = await prisma.match.findMany({
-      where: { leagueId: league.id, status: "PLAYED" },
-    });
+      const playedMatches = await prisma.match.findMany({
+        where: { leagueId: league.id, status: "PLAYED" },
+      });
 
-    const table = Object.fromEntries(
-      league.teams.map(t => [t.id, {
-        team: t, mj: 0, v: 0, e: 0, inf: 0, gm: 0, gp: 0, pct: 0,
-      }])
-    );
+      const table = Object.fromEntries(
+        league.teams.map(t => [t.id, {
+          team: t, mj: 0, v: 0, e: 0, inf: 0, gm: 0, gp: 0, pct: 0,
+        }])
+      );
 
-    for (const m of playedMatches) {
-      const home = table[m.homeTeamId];
-      const away = table[m.awayTeamId];
-      if (!home || !away) continue;
+      for (const m of playedMatches) {
+        const home = table[m.homeTeamId];
+        const away = table[m.awayTeamId];
+        if (!home || !away) continue;
 
-      home.mj += 1; away.mj += 1;
-      home.gm += m.homeGoals; home.gp += m.awayGoals;
-      away.gm += m.awayGoals; away.gp += m.homeGoals;
+        home.mj += 1; away.mj += 1;
+        home.gm += m.homeGoals; home.gp += m.awayGoals;
+        away.gm += m.awayGoals; away.gp += m.homeGoals;
 
-      if (m.homeGoals > m.awayGoals) { home.v += 1; away.inf += 1; home.pct += 3; }
-      else if (m.homeGoals < m.awayGoals) { away.v += 1; home.inf += 1; away.pct += 3; }
-      else { home.e += 1; away.e += 1; home.pct += 1; away.pct += 1; }
-    }
-
-    // Last-5 form (oldest→newest) per team, from the same played matches.
-    const formByTeam = Object.fromEntries(league.teams.map(t => [t.id, []]));
-    const chron = [...playedMatches].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
-    for (const m of chron) {
-      if (formByTeam[m.homeTeamId]) {
-        formByTeam[m.homeTeamId].push(m.homeGoals > m.awayGoals ? "W" : m.homeGoals < m.awayGoals ? "L" : "D");
+        if (m.homeGoals > m.awayGoals) { home.v += 1; away.inf += 1; home.pct += 3; }
+        else if (m.homeGoals < m.awayGoals) { away.v += 1; home.inf += 1; away.pct += 3; }
+        else { home.e += 1; away.e += 1; home.pct += 1; away.pct += 1; }
       }
-      if (formByTeam[m.awayTeamId]) {
-        formByTeam[m.awayTeamId].push(m.awayGoals > m.homeGoals ? "W" : m.awayGoals < m.homeGoals ? "L" : "D");
+
+      // Last-5 form (oldest→newest) per team, from the same played matches.
+      const formByTeam = Object.fromEntries(league.teams.map(t => [t.id, []]));
+      const chron = [...playedMatches].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+      for (const m of chron) {
+        if (formByTeam[m.homeTeamId]) {
+          formByTeam[m.homeTeamId].push(m.homeGoals > m.awayGoals ? "W" : m.homeGoals < m.awayGoals ? "L" : "D");
+        }
+        if (formByTeam[m.awayTeamId]) {
+          formByTeam[m.awayTeamId].push(m.awayGoals > m.homeGoals ? "W" : m.awayGoals < m.homeGoals ? "L" : "D");
+        }
       }
-    }
 
-    const standings = Object.values(table)
-      .map(row => ({ ...row, gd: row.gm - row.gp, form: (formByTeam[row.team.id] || []).slice(-5) }))
-      .sort((a, b) => b.pct - a.pct || b.gd - a.gd || b.gm - a.gm);
+      const standings = Object.values(table)
+        .map(row => ({ ...row, gd: row.gm - row.gp, form: (formByTeam[row.team.id] || []).slice(-5) }))
+        .sort((a, b) => b.pct - a.pct || b.gd - a.gd || b.gm - a.gm);
 
-    res.json({ league, standings });
+      return { league, standings };
+    });
+
+    if (!payload) return res.status(404).json({ error: "Liga nu există." });
+    res.json(payload);
   } catch (err) {
     next(err);
   }
@@ -292,11 +303,16 @@ async function getMatches(req, res, next) {
 // matches this season, plus this league's own season-close prize tiers.
 async function getInfluenceBoard(req, res, next) {
   try {
-    const league = await prisma.league.findUnique({ where: { id: req.params.id }, select: { id: true, name: true, seasonNumber: true, flag: true } });
-    if (!league) return res.status(404).json({ error: "Liga nu există." });
+    const payload = await getOrSet(`influence-board:${req.params.id}`, BOARD_CACHE_TTL_MS, async () => {
+      const league = await prisma.league.findUnique({ where: { id: req.params.id }, select: { id: true, name: true, seasonNumber: true, flag: true } });
+      if (!league) return null;
 
-    const players = await seasonService.leaguePlayerInfluenceBoard(league.id, 50);
-    res.json({ league, players, prizes: seasonService.PLAYER_INFLUENCE_PRIZES });
+      const players = await seasonService.leaguePlayerInfluenceBoard(league.id, 50);
+      return { league, players, prizes: seasonService.PLAYER_INFLUENCE_PRIZES };
+    });
+
+    if (!payload) return res.status(404).json({ error: "Liga nu există." });
+    res.json(payload);
   } catch (err) {
     next(err);
   }
@@ -307,16 +323,23 @@ async function getInfluenceBoard(req, res, next) {
 // competition of the LIGA's season. Empty for a non-LIGA id.
 async function getTopScorers(req, res, next) {
   try {
-    const { league, scorers } = await seasonService.leagueSeasonTopScorers(req.params.id, 40);
-    if (!league) {
-      const exists = await prisma.league.findUnique({ where: { id: req.params.id }, select: { id: true } });
-      if (!exists) return res.status(404).json({ error: "Liga nu există." });
-      return res.json({ league: null, scorers: [] });
-    }
-    res.json({
-      league: { id: league.id, name: league.name, flag: league.flag, seasonNumber: league.seasonNumber },
-      scorers,
+    const result = await getOrSet(`top-scorers:${req.params.id}`, BOARD_CACHE_TTL_MS, async () => {
+      const { league, scorers } = await seasonService.leagueSeasonTopScorers(req.params.id, 40);
+      if (!league) {
+        const exists = await prisma.league.findUnique({ where: { id: req.params.id }, select: { id: true } });
+        if (!exists) return { notFound: true };
+        return { body: { league: null, scorers: [] } };
+      }
+      return {
+        body: {
+          league: { id: league.id, name: league.name, flag: league.flag, seasonNumber: league.seasonNumber },
+          scorers,
+        },
+      };
     });
+
+    if (result.notFound) return res.status(404).json({ error: "Liga nu există." });
+    res.json(result.body);
   } catch (err) {
     next(err);
   }

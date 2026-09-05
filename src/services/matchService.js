@@ -101,8 +101,12 @@ async function simulateAndPersistMatch(matchId) {
     multiplierFor("DOUBLE_MATCH_REWARDS"),
     getActiveEvent("DOUBLE_GOAL_ASSIST_REWARDS"),
   ]);
-  const scorerIds = new Set(result.events.map(e => e.scorerId).filter(Boolean));
-  const assistIds = new Set(result.events.map(e => e.assistId).filter(Boolean));
+  // Only GOAL events carry a scoring/assisting player — SHOT/CHANCE/CORNER/CARD
+  // events also stamp `scorerId` (whoever's "involved"), so this must stay
+  // scoped to goals or every shot-taker would wrongly count as a scorer.
+  const goalEvents = result.events.filter(e => e.type === "GOAL");
+  const scorerIds = new Set(goalEvents.map(e => e.scorerId).filter(Boolean));
+  const assistIds = new Set(goalEvents.map(e => e.assistId).filter(Boolean));
 
   await prisma.$transaction(async (tx) => {
     await tx.match.update({
@@ -119,7 +123,7 @@ async function simulateAndPersistMatch(matchId) {
         penaltyScore,
         winnerTeamId,
         events: { create: result.events.map(e => ({
-          minute: e.minute, type: "GOAL", teamId: e.teamId,
+          minute: e.minute, type: e.type, teamId: e.teamId,
           scorerId: e.scorerId, assistId: e.assistId,
         })) },
       },
@@ -135,8 +139,8 @@ async function simulateAndPersistMatch(matchId) {
     // Appearance XP + totalMatches for every player who was in the squad.
     const allPlayers = [...activeHome, ...activeAway];
     for (const p of allPlayers) {
-      const goals = result.events.filter(e => e.scorerId === p.id).length;
-      const assists = result.events.filter(e => e.assistId === p.id).length;
+      const goals = goalEvents.filter(e => e.scorerId === p.id).length;
+      const assists = goalEvents.filter(e => e.assistId === p.id).length;
       const xpGain = (APPEARANCE_XP + goals * GOAL_XP + assists * ASSIST_XP) * matchXpMult;
       const derived = levelFromTotalXp(p.xp + xpGain);
 

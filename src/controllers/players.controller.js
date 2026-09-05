@@ -64,7 +64,7 @@ const SHOP_BUNDLE = { id: "bundle_super", cash: 75000, energy: 550, priceEur: 14
 // One-time discounted Starter Pack — real money (simulated), once per account.
 const STARTER_PACK = { id: "starter_pack", cash: 50000, energy: 400, tokens: 15, priceEur: 2.99, valueEur: 12.99 };
 
-const { dailyCashForLevel } = require("../jobs/dailyBonusJob");
+const { dailyCashForLevel } = require("../utils/dailyBonus");
 
 function withBonus(amount, bonus) {
   return amount + Math.round((amount * (bonus || 0)) / 100);
@@ -328,8 +328,8 @@ async function getPlayerProfile(req, res, next) {
       const cup = await prisma.league.findFirst({ where: { parentLeagueId: user.team.league.id, type: "CUPA_INTERNA" } });
       const leagueIds = [user.team.league.id, ...(cup ? [cup.id] : [])];
       const [goals, assists] = await Promise.all([
-        prisma.matchEvent.count({ where: { scorerId: user.id, match: { leagueId: { in: leagueIds } } } }),
-        prisma.matchEvent.count({ where: { assistId: user.id, match: { leagueId: { in: leagueIds } } } }),
+        prisma.matchEvent.count({ where: { type: "GOAL", scorerId: user.id, match: { leagueId: { in: leagueIds } } } }),
+        prisma.matchEvent.count({ where: { type: "GOAL", assistId: user.id, match: { leagueId: { in: leagueIds } } } }),
       ]);
       seasonStats = { goals, assists };
     }

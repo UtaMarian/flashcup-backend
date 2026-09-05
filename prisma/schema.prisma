@@ -229,6 +229,9 @@ model Team {
   name     String
   city     String?
   colorHex String  @default("#1F6F4A")
+  // Optional secondary kit colour (manager/admin set). null → client picks a
+  // sensible default (white) for the striped jersey.
+  colorHex2 String?
   logoUrl  String?
 
   leagueId String?

@@ -97,8 +97,8 @@ async function getMatch(req, res, next) {
 
 // POST /api/matches/:id/simulate   (admin only)
 // Manual trigger — normally matches simulate automatically once their
-// kickoff time passes (see src/jobs/matchScheduler.js), this endpoint lets
-// an admin force it early for testing/demo purposes.
+// kickoff time passes (via the match-scheduler cron in the flashcup-workers
+// repo), this endpoint lets an admin force it early for testing/demo purposes.
 async function simulateNow(req, res, next) {
   try {
     const match = await simulateAndPersistMatch(req.params.id);

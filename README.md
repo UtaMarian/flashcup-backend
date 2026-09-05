@@ -9,8 +9,11 @@ simulator (matches the React interfaces built earlier).
 - **Prisma ORM** + **SQLite** (file-based, zero setup — swap the datasource
   in `prisma/schema.prisma` for PostgreSQL/MySQL in production)
 - **JWT** auth (`jsonwebtoken`) + **bcrypt** password hashing
-- **node-cron** — background job that auto-simulates matches once their
-  kickoff time passes
+- **Background cron jobs** (match auto-simulation, energy regen, manager
+  polls, events) now live in a separate repo —
+  [`flashcup-workers`](https://github.com/UtaMarian/flashcup-workers) — which
+  reuses this backend's services via a git submodule. This API process runs
+  no cron of its own.
 
 ## Setup
 
@@ -23,12 +26,9 @@ npm run seed                  # creates the admin account + Liga 1 + 4 starter t
 npm run dev                   # starts the API on http://localhost:4000
 ```
 
-The seed script creates the required administrator account:
-
-```
-email:    Administrator@flashumi.cloud
-password: Fl@shumicl0ud
-```
+The seed script creates the required administrator account, using the
+`ADMIN_EMAIL`/`ADMIN_PASSWORD` values from your `.env` (set them there —
+never commit real values).
 
 ## Architecture notes
 
@@ -86,10 +86,13 @@ later, but fixture auto-generation currently targets leagues.
    - auto-generates kickoff times for every match that day, evenly spread
      across the 16:00–22:00 window (`src/utils/matchTimes.js`),
    - flips the league to `ACTIVE`.
-5. From then on, **`src/jobs/matchScheduler.js`** (a `node-cron` job running
-   every minute) automatically simulates any `SCHEDULED` match whose kickoff
-   time has passed — no manual action needed. `POST /api/matches/:id/simulate`
-   exists for an admin to force one early (e.g. for a demo).
+5. From then on, the **match-scheduler cron job** (in the
+   [`flashcup-workers`](https://github.com/UtaMarian/flashcup-workers) repo,
+   running every minute) automatically simulates any `SCHEDULED` match whose
+   kickoff time has passed — no manual action needed. It calls
+   `simulateDueMatches()` from `src/services/matchService.js`.
+   `POST /api/matches/:id/simulate` exists for an admin to force one early
+   (e.g. for a demo).
 
 ### Match simulation (`src/utils/matchSim.js` + `src/services/matchService.js`)
 
@@ -172,9 +175,11 @@ flashleague-backend/
     controllers/           # one file per resource
     middleware/            # auth, role guard, error handler
     routes/                 # Express routers, mirrors controllers
-    services/matchService.js  # simulate + persist a match (shared by cron & manual trigger)
+    services/matchService.js  # simulate + persist a match (shared by the workers repo & manual trigger)
     utils/                 # xp curve, round-robin, kickoff times, sim engine, password, jwt
-    jobs/matchScheduler.js  # node-cron: auto-simulate due matches every minute
     app.js
     server.js
 ```
+
+Background cron jobs are in the separate
+[`flashcup-workers`](https://github.com/UtaMarian/flashcup-workers) repo.

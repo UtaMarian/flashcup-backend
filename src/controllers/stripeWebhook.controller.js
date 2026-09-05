@@ -7,6 +7,7 @@
 // for how the matching PENDING ShopOrder is created.
 const prisma = require("../config/db");
 const { getStripeClient } = require("../config/stripe");
+const logger = require("../config/logger");
 
 /** Grants a fulfilled order's resources and marks it PAID. Idempotent: a
  * second delivery of the same event (Stripe retries webhooks at-least-once)
@@ -33,7 +34,7 @@ async function fulfillOrder(order, paymentIntentId) {
         where: { id: fresh.id },
         data: { status: "PAID", fulfilledAt: new Date(), stripePaymentIntentId: paymentIntentId || null },
       });
-      console.error(`[stripe-webhook] Starter Pack deja revendicat de userul ${user.id} — comanda ${fresh.id} marcată PAID fără a acorda din nou. Verifică dacă e nevoie de rambursare.`);
+      logger.error({ userId: user.id, orderId: fresh.id }, "Starter Pack deja revendicat — comandă marcată PAID fără a acorda din nou. Verifică dacă e nevoie de rambursare.");
       return;
     }
 
@@ -67,7 +68,7 @@ async function handleStripeWebhook(req, res) {
   const signature = req.headers["stripe-signature"];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
-    console.error("[stripe-webhook] STRIPE_WEBHOOK_SECRET nu este configurat — eveniment respins.");
+    logger.error("STRIPE_WEBHOOK_SECRET nu este configurat — eveniment respins.");
     return res.status(500).send("Webhook not configured.");
   }
 
@@ -76,7 +77,7 @@ async function handleStripeWebhook(req, res) {
     const stripe = getStripeClient();
     event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
   } catch (err) {
-    console.error("[stripe-webhook] Semnătură invalidă:", err.message);
+    logger.error({ err }, "Semnătură webhook Stripe invalidă");
     return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
   }
 
@@ -103,7 +104,7 @@ async function handleStripeWebhook(req, res) {
     }
     res.json({ received: true });
   } catch (err) {
-    console.error("[stripe-webhook] Eroare la procesarea evenimentului:", err);
+    logger.error({ err, eventType: event.type }, "Eroare la procesarea evenimentului webhook");
     // 500 -> Stripe retries the event later instead of silently losing it.
     res.status(500).send("Webhook handler error.");
   }

@@ -1,6 +1,9 @@
 const prisma = require("../config/db");
 const seasonService = require("../services/seasonService");
 
+// A 6-digit hex colour (#rrggbb). Used to validate kit colours.
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 /**
  * A team's saved Prim 11 as `{ formation, playerIds }` where playerIds is an
  * 11-length array in slot order (index 0 = GK), entries null for empty slots.
@@ -12,7 +15,13 @@ async function getLineupOrder(teamId) {
   if (!lineup) return null;
   try {
     const slots = JSON.parse(lineup.slotsJson);
-    return { formation: lineup.formation, playerIds: slots.map(s => s.playerId || null) };
+    return {
+      formation: lineup.formation,
+      playerIds: slots.map(s => s.playerId || null),
+      style: lineup.style,
+      marking: lineup.marking,
+      pressing: lineup.pressing,
+    };
   } catch {
     return null;
   }
@@ -67,10 +76,10 @@ async function getTeam(req, res, next) {
   }
 }
 
-// POST /api/teams   { name, city, colorHex, logoUrl, leagueId }   (admin only)
+// POST /api/teams   { name, city, colorHex, colorHex2, logoUrl, leagueId }   (admin only)
 async function createTeam(req, res, next) {
   try {
-    const { name, city, colorHex, logoUrl, leagueId } = req.body;
+    const { name, city, colorHex, colorHex2, logoUrl, leagueId } = req.body;
     if (!name) return res.status(400).json({ error: "Numele echipei este obligatoriu." });
 
     const logo = normalizeLogo(logoUrl);
@@ -82,7 +91,13 @@ async function createTeam(req, res, next) {
     }
 
     const team = await prisma.team.create({
-      data: { name, city, colorHex: colorHex || "#1F6F4A", logoUrl: logo.skip ? null : logo.value, leagueId: leagueId || null },
+      data: {
+        name, city,
+        colorHex: colorHex || "#1F6F4A",
+        colorHex2: HEX_COLOR.test(colorHex2 || "") ? colorHex2 : null,
+        logoUrl: logo.skip ? null : logo.value,
+        leagueId: leagueId || null,
+      },
     });
     res.status(201).json({ team });
   } catch (err) {
@@ -105,10 +120,10 @@ async function assignLeague(req, res, next) {
   }
 }
 
-// PATCH /api/teams/:id   { name?, city?, colorHex?, logoUrl? }   (admin only)
+// PATCH /api/teams/:id   { name?, city?, colorHex?, colorHex2?, logoUrl? }   (admin only)
 async function updateTeam(req, res, next) {
   try {
-    const { name, city, colorHex, logoUrl } = req.body;
+    const { name, city, colorHex, colorHex2, logoUrl } = req.body;
     if (name !== undefined && !name.trim()) {
       return res.status(400).json({ error: "Numele echipei este obligatoriu." });
     }
@@ -125,6 +140,9 @@ async function updateTeam(req, res, next) {
         name: name !== undefined ? name.trim() : undefined,
         city: city !== undefined ? city : undefined,
         colorHex: colorHex !== undefined ? colorHex : undefined,
+        colorHex2: colorHex2 === undefined
+          ? undefined
+          : (HEX_COLOR.test(colorHex2 || "") ? colorHex2 : null),
         logoUrl: logo.skip ? undefined : logo.value,
       },
     });

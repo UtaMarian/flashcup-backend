@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const compression = require("compression");
 
 const authRoutes = require("./routes/auth.routes");
 const usersRoutes = require("./routes/users.routes");
@@ -25,6 +27,15 @@ const { handleStripeWebhook } = require("./controllers/stripeWebhook.controller"
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
+
+// Needed so express-rate-limit (and req.ip generally) sees the real client
+// IP instead of the reverse proxy's (nginx in Docker, or the hosting
+// provider's edge in production) — without it every request looks like it
+// comes from the same address.
+app.set("trust proxy", 1);
+
+app.use(helmet());
+app.use(compression());
 
 // Frontend now lives on a different origin (flashcup.live) than the API
 // (api.flashcup.live), so this is real cross-origin traffic, not same-site.

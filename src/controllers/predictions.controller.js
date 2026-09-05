@@ -168,6 +168,35 @@ async function collectPrediction(req, res, next) {
   }
 }
 
+// DELETE /api/predictions/:id
+// Cancels one of the caller's own still-pending predictions (match not yet
+// kicked off) and refunds the flat cash stake. Clicking an already-selected
+// 1 / X / 2 chip in the UI unchecks the bet through here.
+async function cancelPrediction(req, res, next) {
+  try {
+    const user = req.user;
+    const prediction = await prisma.prediction.findUnique({ where: { id: req.params.id } });
+    if (!prediction || prediction.userId !== user.id) return res.status(404).json({ error: "Predicția nu există." });
+    if (prediction.outcome !== "PENDING" || prediction.collectedAt) {
+      return res.status(409).json({ error: "Predicția a fost deja decontată." });
+    }
+
+    const match = await prisma.match.findUnique({ where: { id: prediction.matchId } });
+    if (match && (match.status !== "SCHEDULED" || new Date(match.scheduledAt) <= new Date())) {
+      return res.status(409).json({ error: "Meciul a început deja — pariul nu mai poate fi retras." });
+    }
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: user.id }, data: { cash: { increment: prediction.stake } } }),
+      prisma.prediction.delete({ where: { id: prediction.id } }),
+    ]);
+
+    res.json({ success: true, refunded: prediction.stake, cashRemaining: user.cash + prediction.stake });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /api/predictions/rewards/:id/collect
 // Claims the +1 token for one of the caller's own eligible, uncollected group rewards.
 async function collectReward(req, res, next) {
@@ -188,4 +217,4 @@ async function collectReward(req, res, next) {
   }
 }
 
-module.exports = { getBoard, placePrediction, collectPrediction, collectReward };
+module.exports = { getBoard, placePrediction, cancelPrediction, collectPrediction, collectReward };

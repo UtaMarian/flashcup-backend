@@ -12,19 +12,20 @@ const {
   resetPassword,
 } = require("../controllers/auth.controller");
 const { authenticate } = require("../middleware/auth");
+const { loginLimiter, authLimiter } = require("../middleware/rateLimit");
 
 const router = express.Router();
 
-router.post("/register", register);
-router.post("/login", login);
+router.post("/register", authLimiter, register);
+router.post("/login", loginLimiter, login);
 
 // Password reset (LOCAL accounts) — unauthenticated.
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password", resetPassword);
+router.post("/forgot-password", authLimiter, forgotPassword);
+router.post("/reset-password", authLimiter, resetPassword);
 
 // Social sign-in
-router.post("/google", googleAuth);
-router.post("/facebook", facebookAuth);
+router.post("/google", authLimiter, googleAuth);
+router.post("/facebook", authLimiter, facebookAuth);
 
 // Email verification (LOCAL accounts) — allowed while unverified.
 router.post("/verify-email", authenticate, verifyEmail);

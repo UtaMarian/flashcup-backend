@@ -99,7 +99,7 @@ function config(event) {
  * Advances event lifecycle by wall-clock: SCHEDULED→ACTIVE once startsAt
  * passes, ACTIVE→ENDED once endsAt passes. Cheap enough to call lazily at
  * the top of every read path (mirrors settingsService's lazy-create), and
- * also run once a minute by src/jobs/eventsJob.js.
+ * also run once a minute by the events cron job in the flashcup-workers repo.
  */
 async function syncEventStatuses() {
   const now = new Date();

@@ -204,7 +204,12 @@ async function activeEvents(req, res, next) {
         base.me = {
           canSpin: !nextSpinAt || nextSpinAt <= new Date(),
           nextSpinAt,
-          prizes: (e.config.prizes || []).map((p) => ({ label: p.label })),
+          prizes: (e.config.prizes || []).map((p) => ({
+            label: p.label,
+            cash: p.cash || 0,
+            tokens: p.tokens || 0,
+            energy: p.energy || 0,
+          })),
         };
       } else if (e.type === "POSITION_CHANGE") {
         const used = await prisma.gameEventClaim.count({ where: { eventId: e.id, userId, kind: "POSITION_CHANGE" } });
